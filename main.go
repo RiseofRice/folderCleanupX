@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/getlantern/systray"
 	"github.com/sqweek/dialog"
 	"golang.org/x/sys/windows/registry"
 )
@@ -25,6 +28,12 @@ type Config struct {
 	Configured bool   `json:"configured"`
 }
 
+var (
+	cfgMu  sync.Mutex
+	cfg    Config
+	paused atomic.Bool
+)
+
 func configFilePath() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -38,30 +47,30 @@ func configFilePath() (string, error) {
 }
 
 func loadConfig() (Config, error) {
-	var cfg Config
+	var c Config
 	path, err := configFilePath()
 	if err != nil {
-		return cfg, err
+		return c, err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return cfg, nil
+			return c, nil
 		}
-		return cfg, err
+		return c, err
 	}
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return cfg, err
+	if err := json.Unmarshal(data, &c); err != nil {
+		return c, err
 	}
-	return cfg, nil
+	return c, nil
 }
 
-func saveConfig(cfg Config) error {
+func saveConfig(c Config) error {
 	path, err := configFilePath()
 	if err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -103,7 +112,7 @@ func cleanFolder(path string) error {
 }
 
 func firstTimeSetup() (Config, error) {
-	var cfg Config
+	var c Config
 
 	autostart := dialog.Message("Should %s automatically run at Windows startup?", appName).
 		Title(dialogTitle).
@@ -111,26 +120,51 @@ func firstTimeSetup() (Config, error) {
 
 	folder, err := dialog.Directory().Title("Select the folder to be cleaned every 2 hours").Browse()
 	if err != nil {
-		return cfg, fmt.Errorf("no folder selected: %w", err)
+		return c, fmt.Errorf("no folder selected: %w", err)
 	}
 
-	cfg.FolderPath = folder
-	cfg.Autostart = autostart
-	cfg.Configured = true
+	c.FolderPath = folder
+	c.Autostart = autostart
+	c.Configured = true
 
 	if err := setAutostart(autostart); err != nil {
 		dialog.Message("Could not set up autostart: %v", err).Title(dialogTitle).Error()
 	}
 
-	if err := saveConfig(cfg); err != nil {
-		return cfg, fmt.Errorf("could not save configuration: %w", err)
+	if err := saveConfig(c); err != nil {
+		return c, fmt.Errorf("could not save configuration: %w", err)
 	}
 
-	return cfg, nil
+	return c, nil
+}
+
+func runCleanup() {
+	if paused.Load() {
+		return
+	}
+	cfgMu.Lock()
+	folder := cfg.FolderPath
+	cfgMu.Unlock()
+
+	if err := cleanFolder(folder); err != nil {
+		dialog.Message("Error cleaning folder: %v", err).Title(dialogTitle).Error()
+	}
+}
+
+func cleanupLoop() {
+	runCleanup()
+
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		runCleanup()
+	}
 }
 
 func main() {
-	cfg, err := loadConfig()
+	var err error
+	cfg, err = loadConfig()
 	if err != nil {
 		dialog.Message("Error loading configuration: %v", err).Title(dialogTitle).Error()
 		os.Exit(1)
@@ -145,17 +179,71 @@ func main() {
 		dialog.Message("Setup complete. The folder\n%s\nwill be emptied every 2 hours.", cfg.FolderPath).Title(dialogTitle).Info()
 	}
 
-	// Clean immediately once, then on the regular interval.
-	if err := cleanFolder(cfg.FolderPath); err != nil {
-		dialog.Message("Error cleaning folder: %v", err).Title(dialogTitle).Error()
-	}
+	systray.Run(onReady, onExit)
+}
 
-	ticker := time.NewTicker(cleanupInterval)
-	defer ticker.Stop()
+func onReady() {
+	systray.SetIcon(generateIcon())
+	systray.SetTitle("")
+	systray.SetTooltip(dialogTitle)
 
-	for range ticker.C {
-		if err := cleanFolder(cfg.FolderPath); err != nil {
-			dialog.Message("Error cleaning folder: %v", err).Title(dialogTitle).Error()
+	cfgMu.Lock()
+	folder := cfg.FolderPath
+	cfgMu.Unlock()
+
+	mFolder := systray.AddMenuItem(folderLabel(folder), "Currently cleaned folder")
+	mFolder.Disable()
+	mChange := systray.AddMenuItem("Change folder...", "Choose a different folder to clean")
+	systray.AddSeparator()
+	mPause := systray.AddMenuItem("Pause", "Pause automatic cleanup")
+	mCleanNow := systray.AddMenuItem("Clean now", "Run cleanup immediately")
+	systray.AddSeparator()
+	mQuit := systray.AddMenuItem("Quit", "Exit "+appName)
+
+	go cleanupLoop()
+
+	go func() {
+		for {
+			select {
+			case <-mChange.ClickedCh:
+				folder, err := dialog.Directory().Title("Select the folder to be cleaned every 2 hours").Browse()
+				if err != nil {
+					continue // user cancelled
+				}
+
+				cfgMu.Lock()
+				cfg.FolderPath = folder
+				err = saveConfig(cfg)
+				cfgMu.Unlock()
+
+				if err != nil {
+					dialog.Message("Could not save configuration: %v", err).Title(dialogTitle).Error()
+					continue
+				}
+				mFolder.SetTitle(folderLabel(folder))
+
+			case <-mPause.ClickedCh:
+				if paused.Load() {
+					paused.Store(false)
+					mPause.SetTitle("Pause")
+				} else {
+					paused.Store(true)
+					mPause.SetTitle("Resume")
+				}
+
+			case <-mCleanNow.ClickedCh:
+				go runCleanup()
+
+			case <-mQuit.ClickedCh:
+				systray.Quit()
+				return
+			}
 		}
-	}
+	}()
+}
+
+func onExit() {}
+
+func folderLabel(folder string) string {
+	return "Folder: " + folder
 }
