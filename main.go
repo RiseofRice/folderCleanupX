@@ -16,7 +16,7 @@ import (
 
 const (
 	appName         = "FolderCleanerX"
-	version         = "1.0"
+	version         = "1.1"
 	cleanupInterval = 2 * time.Hour
 )
 
@@ -191,6 +191,8 @@ func cleanupLoop() {
 }
 
 func main() {
+	ensureSingleInstance()
+
 	var err error
 	cfg, err = loadConfig()
 	if err != nil {
