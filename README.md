@@ -51,10 +51,6 @@ go build -ldflags="-H=windowsgui" -o folderCleanupX.exe .
 
 The `-H=windowsgui` flag prevents a console window from appearing.
 
-## GitHub Actions
-
-A workflow at [`.github/workflows/build.yml`](.github/workflows/build.yml) builds the binary on `windows-latest` for every push to `main`, version tags (`v*`), pull requests, and manual triggers, and uploads `folderCleanupX.exe` as a build artifact.
-
 ## Warning
 
 This tool **permanently deletes** the contents of the folder you select, with no confirmation and no undo. Choose the folder carefully (e.g. a downloads or temp folder), not anything containing important files.
