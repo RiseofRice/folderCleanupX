@@ -32,7 +32,29 @@ var (
 	cfgMu  sync.Mutex
 	cfg    Config
 	paused atomic.Bool
+
+	nextMu      sync.Mutex
+	nextCleanup time.Time
 )
+
+func setNextCleanup(t time.Time) {
+	nextMu.Lock()
+	nextCleanup = t
+	nextMu.Unlock()
+}
+
+func nextCleanupLabel() string {
+	if paused.Load() {
+		return "Next cleanup: paused"
+	}
+	nextMu.Lock()
+	t := nextCleanup
+	nextMu.Unlock()
+	if t.IsZero() {
+		return "Next cleanup: -"
+	}
+	return "Next cleanup: " + t.Format("Mon 15:04")
+}
 
 func configFilePath() (string, error) {
 	dir, err := os.UserConfigDir()
@@ -153,12 +175,14 @@ func runCleanup() {
 
 func cleanupLoop() {
 	runCleanup()
+	setNextCleanup(time.Now().Add(cleanupInterval))
 
 	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		runCleanup()
+		setNextCleanup(time.Now().Add(cleanupInterval))
 	}
 }
 
@@ -195,12 +219,22 @@ func onReady() {
 	mFolder.Disable()
 	mChange := systray.AddMenuItem("Change folder...", "Choose a different folder to clean")
 	systray.AddSeparator()
+	mNext := systray.AddMenuItem(nextCleanupLabel(), "Time of the next automatic cleanup")
+	mNext.Disable()
 	mPause := systray.AddMenuItem("Pause", "Pause automatic cleanup")
 	mCleanNow := systray.AddMenuItem("Clean now", "Run cleanup immediately")
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("Quit", "Exit "+appName)
 
 	go cleanupLoop()
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			mNext.SetTitle(nextCleanupLabel())
+		}
+	}()
 
 	go func() {
 		for {
@@ -230,9 +264,13 @@ func onReady() {
 					paused.Store(true)
 					mPause.SetTitle("Resume")
 				}
+				mNext.SetTitle(nextCleanupLabel())
 
 			case <-mCleanNow.ClickedCh:
-				go runCleanup()
+				go func() {
+					runCleanup()
+					mNext.SetTitle(nextCleanupLabel())
+				}()
 
 			case <-mQuit.ClickedCh:
 				systray.Quit()
