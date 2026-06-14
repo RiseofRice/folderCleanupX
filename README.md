@@ -6,16 +6,17 @@ A small Windows background tool that periodically empties a folder of your choic
 
 1. On first run, it asks whether it should start automatically with Windows.
 2. It opens the native Windows folder picker so you can choose which folder to clean.
-3. It saves your choice to a config file.
-4. From then on, it runs quietly in the background (no console window) and shows a small folder icon in the system tray (bottom-right notification area).
-5. It empties the selected folder — all files and subfolders inside it are deleted, but the folder itself is kept — every **2 hours** (and once immediately on startup).
+3. It shows a warning dialog with a checkbox you must tick (and confirm with OK) acknowledging that the folder's contents will be permanently deleted, every 2 hours.
+4. It saves your choice to a config file.
+5. From then on, it runs quietly in the background (no console window) and shows a small folder icon in the system tray (bottom-right notification area).
+6. It empties the selected folder — all files and subfolders inside it are deleted, but the folder itself is kept — every **2 hours** (and once immediately on startup).
 
 ## Tray menu
 
 Right-click (or left-click, depending on Windows version) the tray icon to:
 
 - **Folder: ...** — shows the currently configured folder (display only)
-- **Change folder...** — opens the folder picker to select a different folder to clean
+- **Change folder...** — opens the folder picker to select a different folder to clean (requires the same confirmation checkbox)
 - **Pause / Resume** — temporarily stop or resume the automatic cleanup
 - **Clean now** — run the cleanup immediately
 - **Quit** — exit the program

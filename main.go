@@ -145,6 +145,10 @@ func firstTimeSetup() (Config, error) {
 		return c, fmt.Errorf("no folder selected: %w", err)
 	}
 
+	if !confirmFolderDeletion(folder) {
+		return c, fmt.Errorf("folder deletion not confirmed")
+	}
+
 	c.FolderPath = folder
 	c.Autostart = autostart
 	c.Configured = true
@@ -243,6 +247,10 @@ func onReady() {
 				folder, err := dialog.Directory().Title("Select the folder to be cleaned every 2 hours").Browse()
 				if err != nil {
 					continue // user cancelled
+				}
+
+				if !confirmFolderDeletion(folder) {
+					continue
 				}
 
 				cfgMu.Lock()
