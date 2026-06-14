@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,7 +18,7 @@ import (
 
 const (
 	appName         = "FolderCleanerX"
-	version         = "1.1"
+	version         = "1.1.2"
 	cleanupInterval = 2 * time.Hour
 )
 
@@ -175,6 +177,9 @@ func runCleanup() {
 	if err := cleanFolder(folder); err != nil {
 		dialog.Message("Error cleaning folder: %v", err).Title(dialogTitle).Error()
 	}
+
+	// Return unused memory to the OS between the long idle periods.
+	debug.FreeOSMemory()
 }
 
 func cleanupLoop() {
@@ -191,6 +196,12 @@ func cleanupLoop() {
 }
 
 func main() {
+	// This app is mostly idle and never runs work in parallel, so a single
+	// OS thread and a smaller GC heap target are enough and reduce the
+	// resident memory footprint considerably.
+	runtime.GOMAXPROCS(1)
+	debug.SetGCPercent(50)
+
 	ensureSingleInstance()
 
 	var err error
