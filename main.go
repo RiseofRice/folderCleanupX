@@ -13,8 +13,11 @@ import (
 
 const (
 	appName         = "FolderCleanerX"
+	version         = "1.0"
 	cleanupInterval = 2 * time.Hour
 )
+
+var dialogTitle = fmt.Sprintf("%s v%s", appName, version)
 
 type Config struct {
 	FolderPath string `json:"folderPath"`
@@ -103,7 +106,7 @@ func firstTimeSetup() (Config, error) {
 	var cfg Config
 
 	autostart := dialog.Message("Should %s automatically run at Windows startup?", appName).
-		Title(appName).
+		Title(dialogTitle).
 		YesNo()
 
 	folder, err := dialog.Directory().Title("Select the folder to be cleaned every 2 hours").Browse()
@@ -116,7 +119,7 @@ func firstTimeSetup() (Config, error) {
 	cfg.Configured = true
 
 	if err := setAutostart(autostart); err != nil {
-		dialog.Message("Could not set up autostart: %v", err).Title(appName).Error()
+		dialog.Message("Could not set up autostart: %v", err).Title(dialogTitle).Error()
 	}
 
 	if err := saveConfig(cfg); err != nil {
@@ -129,22 +132,22 @@ func firstTimeSetup() (Config, error) {
 func main() {
 	cfg, err := loadConfig()
 	if err != nil {
-		dialog.Message("Error loading configuration: %v", err).Title(appName).Error()
+		dialog.Message("Error loading configuration: %v", err).Title(dialogTitle).Error()
 		os.Exit(1)
 	}
 
 	if !cfg.Configured || cfg.FolderPath == "" {
 		cfg, err = firstTimeSetup()
 		if err != nil {
-			dialog.Message("Setup failed: %v", err).Title(appName).Error()
+			dialog.Message("Setup failed: %v", err).Title(dialogTitle).Error()
 			os.Exit(1)
 		}
-		dialog.Message("Setup complete. The folder\n%s\nwill be emptied every 2 hours.", cfg.FolderPath).Title(appName).Info()
+		dialog.Message("Setup complete. The folder\n%s\nwill be emptied every 2 hours.", cfg.FolderPath).Title(dialogTitle).Info()
 	}
 
 	// Clean immediately once, then on the regular interval.
 	if err := cleanFolder(cfg.FolderPath); err != nil {
-		dialog.Message("Error cleaning folder: %v", err).Title(appName).Error()
+		dialog.Message("Error cleaning folder: %v", err).Title(dialogTitle).Error()
 	}
 
 	ticker := time.NewTicker(cleanupInterval)
@@ -152,7 +155,7 @@ func main() {
 
 	for range ticker.C {
 		if err := cleanFolder(cfg.FolderPath); err != nil {
-			dialog.Message("Error cleaning folder: %v", err).Title(appName).Error()
+			dialog.Message("Error cleaning folder: %v", err).Title(dialogTitle).Error()
 		}
 	}
 }
