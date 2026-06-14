@@ -1,4 +1,4 @@
-name: Auto Tag
+name: Release
 
 on:
   push:
@@ -8,15 +8,25 @@ permissions:
   contents: write
 
 jobs:
-  tag:
-    runs-on: ubuntu-latest
+  release:
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Create incremental release tag
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build
+        run: go build -ldflags="-H=windowsgui" -o folderCleanupX.exe .
+
+      - name: Create incremental tag
+        id: tag
+        shell: bash
         run: |
           BASE_VERSION=$(tr -d '[:space:]' < VERSION)
           LATEST=$(git tag -l "v${BASE_VERSION}.*" | sed -E "s/^v${BASE_VERSION}\.//" | sort -n | tail -1)
@@ -27,3 +37,12 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: folderCleanupX.exe
+          generate_release_notes: true
